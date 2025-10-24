@@ -32,28 +32,26 @@ jobs:
         if: steps.version.outputs.VERSION != steps.version.outputs.TAG_VERSION
         run: exit 1
 
-  build_wheel:
-    name: Build wheel for ${{ matrix.python }}-${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  build_linux:
+    name: Build wheel for ${{ matrix.python }}-${{ matrix.platform }}_${{ matrix.archs }}
+    runs-on: ubuntu-22.04${{ matrix.archs == 'aarch64' && '-arm' || '' }}
     strategy:
       fail-fast: false
       matrix:
         python: [cp313, cp314]
-        os: [ubuntu-22.04, windows-2022]
+        platform: [manylinux]
+        archs: [x86_64]
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v6
-
+      - uses: actions/checkout@v5
       - name: Build wheel
-        run: uv build --wheel --python ${{ matrix.python }}
-
+        uses: pypa/cibuildwheel@v3.2.0
+        env:
+          CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform }}_${{ matrix.archs }}
       - uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ matrix.python }}-${{ matrix.os }}
-          path: ./dist/*.whl
+          name: wheel-${{ matrix.python }}-${{ matrix.platform }}_${{ matrix.archs }}
+          path: ./wheelhouse/*.whl
 
   build_sdist:
     name: Build sdist
@@ -76,7 +74,7 @@ jobs:
   publish:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: [check_version, build_wheel, build_sdist]
+    needs: [check_version, build_linux, build_sdist]
     if: github.event_name == 'release'
     permissions:
       id-token: write # required for OIDC trusted publisher
