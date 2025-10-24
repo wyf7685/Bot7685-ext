@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass, field
 
 from .._ext import wplace_template_compare
@@ -46,6 +47,6 @@ async def compare(
     include_pixels: bool = False,
 ) -> list[ColorEntry]:
     entries = await wplace_template_compare(
-        template_bytes, actual_bytes, include_pixels
+        template_bytes, actual_bytes, include_pixels, asyncio.get_event_loop()
     )
     return [ColorEntry(*entry) for entry in entries]

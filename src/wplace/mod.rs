@@ -6,6 +6,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyInt, PyList, PyString, PyTuple};
 use std::collections::HashMap;
 
+use crate::utils::spawn_thread_for_async;
+
 struct ColorEntry {
     name: &'static str,
     count: usize,
@@ -23,15 +25,14 @@ impl ColorEntry {
         }
     }
 
-    fn to_pytuple(&self, py: Python) -> PyResult<Py<PyTuple>> {
+    fn to_py_tuple(&self, py: Python) -> PyResult<Py<PyTuple>> {
         let elements: Vec<Py<PyAny>> = vec![
             PyString::new(py, &self.name).into(),
             PyInt::new(py, self.count).into(),
             PyInt::new(py, self.total).into(),
             PyList::new(py, &self.pixels)?.into(),
         ];
-        let tuple = PyTuple::new(py, elements)?;
-        Ok(tuple.into())
+        Ok(PyTuple::new(py, elements)?.into())
     }
 }
 
@@ -46,18 +47,17 @@ fn load_image(image_bytes: &Bound<'_, PyBytes>) -> PyResult<image::DynamicImage>
 }
 
 #[pyfunction]
-#[pyo3(signature = (template_bytes, actual_bytes, include_pixels))]
 pub(crate) fn wplace_template_compare(
-    py: Python,
     template_bytes: &Bound<'_, PyBytes>,
     actual_bytes: &Bound<'_, PyBytes>,
     include_pixels: bool,
+    asyncio_loop: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     // 从字节流加载图像
     let template_img = load_image(template_bytes)?;
     let actual_img = load_image(actual_bytes)?;
 
-    let compare_func = move || -> PyResult<Py<PyList>> {
+    spawn_thread_for_async(asyncio_loop, move || {
         // 转换为 RGBA 格式
         let template_rgba = template_img.to_rgba8();
         let actual_rgba = actual_img.to_rgba8();
@@ -89,11 +89,11 @@ pub(crate) fn wplace_template_compare(
                 // 统计模板像素总数
                 entry.total += 1;
 
-                // 如果模板像素颜色与实际像素颜色不同
-                if template_pixel.to_rgb() != actual_rgba.get_pixel(x, y).to_rgb()
-                // 或者实际像素是透明的
-                    || actual_rgba.get_pixel(x, y)[3] == 0
-                {
+                // 获取实际像素
+                let actual_pixel = actual_rgba.get_pixel(x, y);
+
+                // 如果模板像素颜色与实际像素颜色不同 或 实际像素透明
+                if template_pixel.to_rgb() != actual_pixel.to_rgb() || actual_pixel[3] == 0 {
                     entry.count += 1;
                     if include_pixels {
                         entry.pixels.push((x as usize, y as usize));
@@ -105,37 +105,12 @@ pub(crate) fn wplace_template_compare(
         let mut diff_values: Vec<ColorEntry> = diff_pixels.into_values().collect();
         diff_values.sort_by(|a, b| b.total.cmp(&a.total).then_with(|| a.name.cmp(&b.name)));
 
-        let result = Python::attach(|py| -> PyResult<Py<PyList>> {
-            let result = PyList::empty(py);
-            for entry in diff_values {
-                result.append(entry.to_pytuple(py)?)?;
-            }
-            Ok(result.into())
-        })?;
-
-        Ok(result)
-    };
-
-    let event_loop = py.import("asyncio")?.call_method0("get_event_loop")?;
-    let fut = event_loop.call_method0("create_future")?;
-    let call_soon_threadsafe = event_loop.getattr("call_soon_threadsafe")?.unbind();
-    let set_result = fut.getattr("set_result")?.unbind();
-    let set_exception = fut.getattr("set_exception")?.unbind();
-
-    std::thread::spawn(move || {
-        Python::attach(|py| match compare_func() {
-            Ok(result) => {
-                call_soon_threadsafe
-                    .call(py, (set_result, result), None)
-                    .unwrap();
-            }
-            Err(err) => {
-                call_soon_threadsafe
-                    .call(py, (set_exception, err), None)
-                    .unwrap();
-            }
-        });
-    });
-
-    Ok(fut.into())
+        Python::attach(|py| -> PyResult<Py<PyList>> {
+            let entries = diff_values
+                .iter()
+                .map(|entry| entry.to_py_tuple(py))
+                .collect::<PyResult<Vec<_>>>()?;
+            Ok(PyList::new(py, entries)?.into())
+        })
+    })
 }

@@ -1,4 +1,5 @@
 mod wplace;
+mod utils;
 use pyo3::prelude::*;
 
 #[pymodule]
