@@ -38,8 +38,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: [cp314, cp314t]
-        os: [ubuntu-latest, windows-latest]
+        python: [cp313, cp314]
+        os: [ubuntu-22.04, windows-2022]
 
     steps:
       - uses: actions/checkout@v4
