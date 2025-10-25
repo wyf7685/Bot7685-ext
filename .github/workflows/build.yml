@@ -2,9 +2,9 @@ name: Build Wheels
 
 on:
   workflow_dispatch:
-  # push:
-  #   branches:
-  #     - master
+  push:
+    branches:
+      - master
   # pull_request:
   #   branches:
   #     - master
@@ -46,10 +46,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.archs }}
       - name: Build wheel
         uses: pypa/cibuildwheel@v3.2.0
         env:
           CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform }}_${{ matrix.archs }}
+          CARGO_INCREMENTAL: 1
       - uses: actions/upload-artifact@v4
         with:
           name: wheel-${{ matrix.python }}-${{ matrix.platform }}_${{ matrix.archs }}
@@ -65,10 +70,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
       - name: Build wheel
         uses: pypa/cibuildwheel@v3.2.0
         env:
           CIBW_BUILD: ${{ matrix.python }}-win_amd64
+          CARGO_INCREMENTAL: 1
       - uses: actions/upload-artifact@v4
         with:
           name: wheel-${{ matrix.python }}-win_amd64
@@ -102,6 +110,8 @@ jobs:
       contents: read
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all wheels
         uses: actions/download-artifact@v4
         with:

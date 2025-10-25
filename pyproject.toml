@@ -1,18 +1,16 @@
 [project]
 name = "bot7685-ext"
-version = "0.1.2"
-description = "Add your description here"
+description = "Extensions for Bot7685"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
+dynamic = ["version"]
 
 [build-system]
-requires = ["maturin>=1.9.6"]
+requires = ["maturin>=1.9.6,<2.0"]
 build-backend = "maturin"
 
-[dependency-groups]
-dev = ["maturin>=1.9.6"]
-
 [tool.maturin]
+manifest-path = "Cargo.toml"
 python-source = "python"
 module-name = "bot7685_ext._ext"
