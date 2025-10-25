@@ -47,6 +47,12 @@ pub(crate) fn wplace_template_compare(
     let actual_img = load_image(actual_bytes)?;
 
     spawn_thread_for_async(asyncio_loop, move || {
+        // 检查图像尺寸是否匹配
+        if template_img.dimensions() != actual_img.dimensions() {
+            let msg = "Template and actual images must have the same dimensions.";
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(msg));
+        }
+
         // 转换为 RGBA 格式
         let template_rgba = template_img.to_rgba8();
         let actual_rgba = actual_img.to_rgba8();

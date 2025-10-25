@@ -1,3 +1,7 @@
 mod color_map;
-pub(crate) mod compare;
+mod compare;
+mod overlay;
 mod utils;
+
+pub(crate) use compare::wplace_template_compare;
+pub(crate) use overlay::wplace_template_overlay;
