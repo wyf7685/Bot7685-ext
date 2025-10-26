@@ -7,7 +7,7 @@ repository = "https://github.com/wyf7685/Bot7685-ext"
 [dependencies]
 image = "0.25.8"
 lazy_static = "1.5.0"
-pyo3 = { version = "0.27.1", features = ["abi3", "extension-module"] }
+pyo3 = { version = "0.27.1", features = ["abi3", "extension-module", "generate-import-lib"] }
 
 [lib]
 name = "_ext"
