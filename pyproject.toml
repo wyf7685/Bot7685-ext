@@ -2,7 +2,7 @@
 name = "bot7685-ext"
 description = "Extensions for Bot7685"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = []
 dynamic = ["version"]
 
@@ -10,7 +10,14 @@ dynamic = ["version"]
 requires = ["maturin>=1.9.6,<2.0"]
 build-backend = "maturin"
 
+[dependency-groups]
+dev = ["maturin>=1.9.6,<2.0"]
+
 [tool.maturin]
 manifest-path = "Cargo.toml"
 python-source = "python"
 module-name = "bot7685_ext._ext"
+bindings = 'pyo3'
+
+[tool.uv]
+package = false
