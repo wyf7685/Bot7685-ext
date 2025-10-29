@@ -18,14 +18,13 @@ where
     std::thread::spawn(move || {
         let result = f();
         Python::attach(|py| {
-            match result {
+            let call_result = match result {
                 Ok(res) => call_soon_threadsafe.call1(py, (set_result, res)),
                 Err(err) => call_soon_threadsafe.call1(py, (set_exception, err)),
+            };
+            if let Err(e) = call_result {
+                e.print(py);
             }
-            .unwrap_or_else(|err| {
-                err.print(py);
-                py.None()
-            })
         });
     });
 

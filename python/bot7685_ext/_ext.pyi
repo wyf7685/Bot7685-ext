@@ -1,5 +1,9 @@
 from asyncio import AbstractEventLoop
 
+__version__: str
+__build_time__: str
+__git_commit_hash__: str
+
 async def wplace_template_compare(
     template_bytes: bytes,
     actual_bytes: bytes,
