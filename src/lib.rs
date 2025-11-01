@@ -13,6 +13,10 @@ fn bot7685_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", VERSION)?;
     m.add("__build_time__", BUILD_TIME)?;
     m.add("__git_commit_hash__", GIT_COMMIT_HASH)?;
+    m.add(
+        "WPLACE_COLORS_MAP",
+        wplace::COLORS_MAP_VEC.clone().into_pyobject(m.py())?,
+    )?;
     m.add_function(wrap_pyfunction!(wplace::wplace_template_compare, m)?)?;
     m.add_function(wrap_pyfunction!(wplace::wplace_template_overlay, m)?)?;
     Ok(())

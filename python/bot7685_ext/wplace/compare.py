@@ -2,12 +2,12 @@ import asyncio
 from dataclasses import dataclass, field
 
 from .._ext import wplace_template_compare
-from .consts import ALL_COLORS, COLORS_ID, PAID_COLORS
+from .consts import ALL_COLORS, COLORS_ID, PAID_COLORS, ColorName
 
 
 @dataclass
 class ColorEntry:
-    name: str
+    name: ColorName
     count: int = 0
     total: int = 0
     pixels: list[tuple[int, int]] = field(default_factory=list)
