@@ -22,3 +22,10 @@ async def wplace_template_overlay(
     asyncio_loop: AbstractEventLoop,
     /,
 ) -> bytes: ...
+async def wplace_group_adjacent(
+    points: list[tuple[int, int, int]],
+    min_group_size: int,
+    merge_distance: float,
+    asyncio_loop: AbstractEventLoop,
+    /,
+) -> list[list[tuple[int, int, int]]]: ...
