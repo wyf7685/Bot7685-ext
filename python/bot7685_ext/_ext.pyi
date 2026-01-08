@@ -29,3 +29,11 @@ async def wplace_group_adjacent(
     asyncio_loop: AbstractEventLoop,
     /,
 ) -> list[list[tuple[int, int, int]]]: ...
+async def wplace_compose_tiles(
+    tiles: list[tuple[tuple[int, int], bytes]],
+    coord1: tuple[int, int, int, int],
+    coord2: tuple[int, int, int, int],
+    background: tuple[int, int, int] | None,
+    asyncio_loop: AbstractEventLoop,
+    /,
+) -> bytes: ...
