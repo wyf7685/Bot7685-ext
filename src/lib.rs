@@ -1,3 +1,4 @@
+mod lru;
 mod utils;
 mod wplace;
 
@@ -21,5 +22,8 @@ fn bot7685_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(wplace::wplace_template_overlay, m)?)?;
     m.add_function(wrap_pyfunction!(wplace::wplace_group_adjacent, m)?)?;
     m.add_function(wrap_pyfunction!(wplace::wplace_compose_tiles, m)?)?;
+
+    m.add_class::<lru::PyLRU>()?;
+
     Ok(())
 }
