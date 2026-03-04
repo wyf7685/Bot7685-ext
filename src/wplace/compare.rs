@@ -1,11 +1,10 @@
 use image::{GenericImageView, Pixel};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyInt, PyList, PyString, PyTuple};
+use pyo3::types::{PyInt, PyList, PyString, PyTuple};
 use std::collections::HashMap;
 
-use crate::utils::spawn_thread_for_async;
 use crate::wplace::color_map::find_color_name;
-use crate::wplace::utils::load_image;
+use crate::wplace::utils::*;
 
 struct ColorEntry {
     name: &'static str,
@@ -37,16 +36,16 @@ impl ColorEntry {
 
 #[pyfunction]
 pub(crate) fn wplace_template_compare(
-    template_bytes: &Bound<'_, PyBytes>,
-    actual_bytes: &Bound<'_, PyBytes>,
+    template_bytes: Vec<u8>,
+    actual_bytes: Vec<u8>,
     include_pixels: bool,
     asyncio_loop: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
-    // 从字节流加载图像
-    let template_img = load_image(template_bytes)?;
-    let actual_img = load_image(actual_bytes)?;
-
     spawn_thread_for_async(asyncio_loop, move || {
+        // 从字节流加载图像
+        let template_img = template_bytes.to_image()?;
+        let actual_img = actual_bytes.to_image()?;
+
         // 检查图像尺寸是否匹配
         if template_img.dimensions() != actual_img.dimensions() {
             let msg = "Template and actual images must have the same dimensions.";
@@ -100,12 +99,12 @@ pub(crate) fn wplace_template_compare(
         let mut diff_values: Vec<ColorEntry> = diff_pixels.into_values().collect();
         diff_values.sort_by(|a, b| b.total.cmp(&a.total).then_with(|| a.name.cmp(&b.name)));
 
-        Python::attach(|py| -> PyResult<Py<PyList>> {
+        Python::attach(|py| -> PyResult<_> {
             let entries = diff_values
                 .iter()
                 .map(|entry| entry.to_py_tuple(py))
                 .collect::<PyResult<Vec<_>>>()?;
-            Ok(PyList::new(py, entries)?.into())
+            Ok(PyList::new(py, entries)?.unbind())
         })
     })
 }

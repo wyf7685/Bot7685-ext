@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -74,11 +76,11 @@ lazy_static! {
         v
     };
 
-    pub(crate) static ref COLORS_MAP: std::collections::HashMap<&'static str, (u8, u8, u8)> = {
+    pub(crate) static ref COLORS_MAP: HashMap<&'static str, (u8, u8, u8)> = {
         COLORS_MAP_VEC
             .iter()
             .cloned()
-            .collect::<std::collections::HashMap<&'static str, (u8, u8, u8)>>()
+            .collect::<HashMap<&'static str, (u8, u8, u8)>>()
     };
 }
 

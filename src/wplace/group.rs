@@ -1,15 +1,14 @@
-use pyo3::{
-    prelude::*,
-    types::{PyFloat, PyInt, PyList},
-};
+use pyo3::{prelude::*, types::PyList};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::utils::spawn_thread_for_async;
+use crate::wplace::utils::*;
 
-pub type Point = (i32, i32, i32); // (x, y, color_id)
+type Point = (i32, i32, i32); // (x, y, color_id)
+type Points = Vec<Point>;
+type CenterXY = (f64, f64);
 
 /// 计算小组的重心坐标
-fn calc_group_cxy(group: &[Point]) -> (f64, f64) {
+fn calc_group_cxy(group: &[Point]) -> CenterXY {
     let len = group.len() as f64;
     let cx = group.iter().map(|(x, _, _)| *x as f64).sum::<f64>() / len;
     let cy = group.iter().map(|(_, y, _)| *y as f64).sum::<f64>() / len;
@@ -17,7 +16,7 @@ fn calc_group_cxy(group: &[Point]) -> (f64, f64) {
 }
 
 /// 计算两个重心坐标的距离
-fn cxy_distance(cxy1: (f64, f64), cxy2: (f64, f64)) -> f64 {
+fn cxy_distance(cxy1: CenterXY, cxy2: CenterXY) -> f64 {
     ((cxy1.0 - cxy2.0).powi(2) + (cxy1.1 - cxy2.1).powi(2)).sqrt()
 }
 
@@ -26,7 +25,7 @@ fn bfs(
     start: (i32, i32),
     point_dict: &HashMap<(i32, i32), i32>,
     visited: &mut HashSet<(i32, i32)>,
-) -> Vec<Point> {
+) -> Points {
     let directions = [
         (-1, -1),
         (-1, 0),
@@ -62,11 +61,7 @@ fn bfs(
 }
 
 /// 将相邻点分组，并合并小分组
-fn group_adjacent(
-    points: Vec<Point>,
-    min_group_size: usize,
-    merge_distance: f64,
-) -> Vec<Vec<Point>> {
+fn group_adjacent(points: Points, min_group_size: usize, merge_distance: f64) -> Vec<Points> {
     // 构建点字典
     let point_dict: HashMap<(i32, i32), i32> = points
         .iter()
@@ -94,7 +89,7 @@ fn group_adjacent(
     let mut group_cxy = groups
         .iter()
         .map(|g| calc_group_cxy(g))
-        .collect::<Vec<(f64, f64)>>();
+        .collect::<Vec<CenterXY>>();
 
     // 第一阶段：根据距离合并相邻的小分组
     let mut merged = true;
@@ -169,7 +164,8 @@ mod tests {
 
     #[test]
     fn test_group_adjacent() {
-        let points = vec![(0, 0, 1), (1, 1, 1), (2, 2, 1), (10, 10, 2), (11, 11, 2)];
+        let points: Vec<(i32, i32, i32)> =
+            vec![(0, 0, 1), (1, 1, 1), (2, 2, 1), (10, 10, 2), (11, 11, 2)];
         let groups = group_adjacent(points, 2, 30.0);
         assert_eq!(groups.len(), 2);
     }
@@ -177,20 +173,13 @@ mod tests {
 
 #[pyfunction]
 pub(crate) fn wplace_group_adjacent(
-    points: &Bound<'_, PyList>,
-    min_group_size: &Bound<'_, PyInt>,
-    merge_distance: &Bound<'_, PyFloat>,
+    points: Vec<Point>,
+    min_group_size: usize,
+    merge_distance: f64,
     asyncio_loop: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
-    let points = points
-        .iter()
-        .map(|item| item.extract::<(i32, i32, i32)>())
-        .collect::<PyResult<Vec<Point>>>()?;
-    let min_group_size = min_group_size.extract::<usize>()?;
-    let merge_distance = merge_distance.extract::<f64>()?;
-
-    spawn_thread_for_async(asyncio_loop, move || -> PyResult<Py<PyList>> {
+    spawn_thread_for_async(asyncio_loop, move || {
         let grouped = group_adjacent(points, min_group_size, merge_distance);
-        Python::attach(|py| Ok(PyList::new(py, grouped)?.into()))
+        Python::attach(|py| Ok(PyList::new(py, grouped)?.unbind()))
     })
 }

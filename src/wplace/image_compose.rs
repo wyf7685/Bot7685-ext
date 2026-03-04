@@ -1,8 +1,7 @@
 use image::{Rgba, RgbaImage};
-use pyo3::{prelude::*, types::PyBytes};
-use std::io::Cursor;
+use pyo3::prelude::*;
 
-use crate::utils::spawn_thread_for_async;
+use crate::wplace::utils::*;
 
 #[pyfunction]
 pub fn wplace_compose_tiles(
@@ -12,7 +11,7 @@ pub fn wplace_compose_tiles(
     background: Option<(u8, u8, u8)>,
     asyncio_loop: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
-    spawn_thread_for_async(asyncio_loop, move || -> PyResult<Py<PyBytes>> {
+    spawn_thread_for_async(asyncio_loop, move || {
         let (tlx1, tly1, pxx1, pxy1) = coord1;
         let (tlx2, tly2, pxx2, pxy2) = coord2;
 
@@ -30,12 +29,7 @@ pub fn wplace_compose_tiles(
         // 遍历所有瓷砖图片
         for ((tx, ty), tile_bytes) in imgs {
             // 解码图片
-            let tile_img = image::load_from_memory(&tile_bytes)
-                .map_err(|e| {
-                    let msg = format!("Failed to load image: {}", e);
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(msg)
-                })?
-                .to_rgba8();
+            let tile_img = tile_bytes.to_image()?.into_rgba8();
 
             // 计算裁剪区域
             let crop_x_start = if tx == tlx1 { pxx1 } else { 0 };
@@ -50,31 +44,17 @@ pub fn wplace_compose_tiles(
             // 裁剪瓷砖图片
             let crop_width = crop_x_end - crop_x_start;
             let crop_height = crop_y_end - crop_y_start;
-            (0..crop_height)
-                .filter(|cy| paste_y + cy < height)
-                .for_each(|cy| {
-                    (0..crop_width)
-                        .filter(|cx| paste_x + cx < width)
-                        .for_each(|cx| {
-                            tile_img
-                                .get_pixel_checked(crop_x_start + cx, crop_y_start + cy)
-                                .filter(|pixel| pixel[3] > 0)
-                                .map(|pixel| {
-                                    result_img.put_pixel(paste_x + cx, paste_y + cy, *pixel)
-                                });
-                        });
-                });
+            for cy in (0..crop_height).filter(|cy| paste_y + cy < height) {
+                for cx in (0..crop_width).filter(|cx| paste_x + cx < width) {
+                    tile_img
+                        .get_pixel_checked(crop_x_start + cx, crop_y_start + cy)
+                        .filter(|pixel| pixel[3] > 0)
+                        .map(|pixel| result_img.put_pixel(paste_x + cx, paste_y + cy, *pixel));
+                }
+            }
         }
 
         // 编码为 PNG
-        let mut png_bytes = Vec::new();
-        result_img
-            .write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png)
-            .map_err(|e| {
-                let msg = format!("Failed to encode image: {}", e);
-                PyErr::new::<pyo3::exceptions::PyValueError, _>(msg)
-            })?;
-
-        Python::attach(|py| Ok(PyBytes::new(py, &png_bytes).into()))
+        result_img.to_py_png_bytes()
     })
 }

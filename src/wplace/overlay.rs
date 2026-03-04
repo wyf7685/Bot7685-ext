@@ -1,22 +1,20 @@
 use image::{GenericImageView, Pixel};
-use pyo3::{prelude::*, types::{PyBytes, PyInt}};
-use std::io::Cursor;
+use pyo3::prelude::*;
 
-use crate::{utils::spawn_thread_for_async, wplace::utils::load_image};
+use crate::wplace::utils::*;
 
 #[pyfunction]
 pub(crate) fn wplace_template_overlay(
-    template_bytes: &Bound<'_, PyBytes>,
-    actual_bytes: &Bound<'_, PyBytes>,
-    overlay_alpha: &Bound<'_, PyInt>,
+    template_bytes: Vec<u8>,
+    actual_bytes: Vec<u8>,
+    overlay_alpha: u8,
     asyncio_loop: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
-    // 从字节流加载图像
-    let template_img = load_image(template_bytes)?;
-    let actual_img = load_image(actual_bytes)?;
-    let overlay_alpha = overlay_alpha.extract::<u8>()?;
+    spawn_thread_for_async(asyncio_loop, move || -> PyResult<_> {
+        // 从字节流加载图像
+        let template_img = template_bytes.to_image()?;
+        let actual_img = actual_bytes.to_image()?;
 
-    spawn_thread_for_async(asyncio_loop, move || -> PyResult<Py<PyBytes>> {
         // 检查图像尺寸是否匹配
         let (width, height) = template_img.dimensions();
         if (width, height) != actual_img.dimensions() {
@@ -46,14 +44,6 @@ pub(crate) fn wplace_template_overlay(
         }
 
         // 将结果图像编码为 PNG 格式
-        let mut buffer = Vec::new();
-        actual_rgba
-            .write_to(&mut Cursor::new(&mut buffer), image::ImageFormat::Png)
-            .map_err(|e| {
-                let msg = format!("Failed to encode image: {}", e);
-                PyErr::new::<pyo3::exceptions::PyValueError, _>(msg)
-            })?;
-
-        Python::attach(|py| Ok(PyBytes::new(py, &buffer).into()))
+        actual_rgba.to_py_png_bytes()
     })
 }
