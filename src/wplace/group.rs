@@ -7,6 +7,17 @@ type Point = (i32, i32, i32); // (x, y, color_id)
 type Points = Vec<Point>;
 type CenterXY = (f64, f64);
 
+const DIRECTIONS_8: [(i32, i32); 8] = [
+    (-1, -1),
+    (-1, 0),
+    (-1, 1),
+    (0, -1),
+    (0, 1),
+    (1, -1),
+    (1, 0),
+    (1, 1),
+];
+
 /// 计算小组的重心坐标
 fn calc_group_cxy(group: &[Point]) -> CenterXY {
     let len = group.len() as f64;
@@ -16,8 +27,17 @@ fn calc_group_cxy(group: &[Point]) -> CenterXY {
 }
 
 /// 计算两个重心坐标的距离
-fn cxy_distance(cxy1: CenterXY, cxy2: CenterXY) -> f64 {
-    ((cxy1.0 - cxy2.0).powi(2) + (cxy1.1 - cxy2.1).powi(2)).sqrt()
+fn cxy_distance_sq(cxy1: CenterXY, cxy2: CenterXY) -> f64 {
+    (cxy1.0 - cxy2.0).powi(2) + (cxy1.1 - cxy2.1).powi(2)
+}
+
+/// 按组大小增量合并两个重心
+fn merge_group_cxy(cxy1: CenterXY, len1: usize, cxy2: CenterXY, len2: usize) -> CenterXY {
+    let total = (len1 + len2) as f64;
+    (
+        (cxy1.0 * len1 as f64 + cxy2.0 * len2 as f64) / total,
+        (cxy1.1 * len1 as f64 + cxy2.1 * len2 as f64) / total,
+    )
 }
 
 /// BFS 查找连通分组
@@ -26,17 +46,6 @@ fn bfs(
     point_dict: &HashMap<(i32, i32), i32>,
     visited: &mut HashSet<(i32, i32)>,
 ) -> Points {
-    let directions = [
-        (-1, -1),
-        (-1, 0),
-        (-1, 1),
-        (0, -1),
-        (0, 1),
-        (1, -1),
-        (1, 0),
-        (1, 1),
-    ];
-
     let mut q = VecDeque::new();
     let mut group = Vec::new();
 
@@ -47,7 +56,7 @@ fn bfs(
         if let Some(&color_id) = point_dict.get(&(x, y)) {
             group.push((x, y, color_id));
 
-            for (dx, dy) in directions.iter() {
+            for (dx, dy) in DIRECTIONS_8.iter() {
                 let neighbor = (x + dx, y + dy);
                 if point_dict.contains_key(&neighbor) && !visited.contains(&neighbor) {
                     visited.insert(neighbor);
@@ -90,26 +99,40 @@ fn group_adjacent(points: Points, min_group_size: usize, merge_distance: f64) ->
         .iter()
         .map(|g| calc_group_cxy(g))
         .collect::<Vec<CenterXY>>();
+    let merge_distance_sq = if merge_distance.is_sign_negative() {
+        -1.0
+    } else {
+        merge_distance * merge_distance
+    };
 
     // 第一阶段：根据距离合并相邻的小分组
-    let mut merged = true;
-    while merged {
-        merged = false;
-        for i in 0..groups.len() {
-            if groups[i].len() >= min_group_size {
-                continue;
-            }
-            for j in (i + 1)..groups.len() {
-                if cxy_distance(group_cxy[i], group_cxy[j]) <= merge_distance {
-                    let group = groups.remove(j);
-                    groups[i].extend(group);
-                    group_cxy.remove(j);
-                    merged = true;
+    if merge_distance_sq >= 0.0 {
+        let mut merged = true;
+        while merged {
+            merged = false;
+
+            for i in 0..groups.len() {
+                if groups[i].len() >= min_group_size {
+                    continue;
+                }
+
+                for j in (i + 1)..groups.len() {
+                    if cxy_distance_sq(group_cxy[i], group_cxy[j]) <= merge_distance_sq {
+                        let left_len = groups[i].len();
+                        let right_len = groups[j].len();
+                        group_cxy[i] =
+                            merge_group_cxy(group_cxy[i], left_len, group_cxy[j], right_len);
+                        let group = groups.remove(j);
+                        groups[i].extend(group);
+                        group_cxy.remove(j);
+                        merged = true;
+                        break;
+                    }
+                }
+
+                if merged {
                     break;
                 }
-            }
-            if merged {
-                break;
             }
         }
     }
@@ -132,10 +155,22 @@ fn group_adjacent(points: Points, min_group_size: usize, merge_distance: f64) ->
         large_groups.push(group);
     }
     for small in small_groups {
+        let small_len = small.len();
         let cxy = calc_group_cxy(&small);
         let closest_large_idx = (0..large_groups.len())
-            .min_by_key(|&j| (cxy_distance(cxy, large_group_cxy[j]) * 10000.0) as i64)
+            .min_by(|&a, &b| {
+                cxy_distance_sq(cxy, large_group_cxy[a])
+                    .total_cmp(&cxy_distance_sq(cxy, large_group_cxy[b]))
+            })
             .unwrap();
+
+        let large_len = large_groups[closest_large_idx].len();
+        large_group_cxy[closest_large_idx] = merge_group_cxy(
+            large_group_cxy[closest_large_idx],
+            large_len,
+            cxy,
+            small_len,
+        );
         large_groups[closest_large_idx].extend(small);
     }
 
@@ -158,8 +193,15 @@ mod tests {
 
     #[test]
     fn test_cxy_distance() {
-        let dist = cxy_distance((0.0, 0.0), (3.0, 4.0));
-        assert!((dist - 5.0).abs() < 0.001);
+        let dist_sq = cxy_distance_sq((0.0, 0.0), (3.0, 4.0));
+        assert!((dist_sq - 25.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_merge_group_cxy() {
+        let merged = merge_group_cxy((0.0, 0.0), 1, (2.0, 2.0), 3);
+        assert!((merged.0 - 1.5).abs() < 0.001);
+        assert!((merged.1 - 1.5).abs() < 0.001);
     }
 
     #[test]
