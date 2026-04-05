@@ -63,6 +63,7 @@ _PATCH_HTMLRENDER_VERSION = "0.6.7"
 _VIRTUAL_HOST = "htmlrender-local.bot"
 _VIRTUAL_BASE = f"http://{_VIRTUAL_HOST}"
 _VIRTUAL_PATTERN = f"{_VIRTUAL_BASE}/**"
+_FILE_URL_IN_HTML_RE = re.compile(r"file://[^\s\"'<>)]+")
 
 
 # ---------------------------------------------------------------------------
@@ -149,12 +150,30 @@ def _file_url_to_virtual(url: str) -> str:
 
     Returns the URL unchanged if it is not a file:// URL.
     """
-    local_dir = _parse_file_url(url)
-    if local_dir is None:
+    local_path = _parse_file_url(url)
+    if local_path is None:
         return url
 
-    resolved = local_dir.resolve()
-    return f"{_VIRTUAL_BASE}{_abs_path_to_url_path(resolved)}/"
+    resolved = local_path.resolve()
+    return f"{_VIRTUAL_BASE}{_abs_path_to_url_path(resolved)}"
+
+
+def _preprocess_html_file_urls(html: str) -> str:
+    """Rewrite embedded file:// URLs in HTML into virtual-host URLs."""
+    replaced = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal replaced
+        original = match.group(0)
+        converted = _file_url_to_virtual(original)
+        if converted != original:
+            replaced += 1
+        return converted
+
+    processed = _FILE_URL_IN_HTML_RE.sub(_replace, html)
+    if replaced:
+        log("DEBUG", f"Replaced {replaced} embedded file:// URL(s) in HTML")
+    return processed
 
 
 async def _proxy_handler(
@@ -273,6 +292,8 @@ def _patch_page(page: Page) -> None:
         wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"]
         | None = None,
     ) -> None:
+        html = _preprocess_html_file_urls(html)
+
         if template_path is not None:
             base_tag = f'<base href="{template_path}">'
             if m := re.search(r"<head(?:\s[^>]*)?>", html, re.IGNORECASE):
