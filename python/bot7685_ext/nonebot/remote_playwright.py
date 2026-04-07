@@ -64,6 +64,11 @@ _VIRTUAL_HOST = "htmlrender-local.bot"
 _VIRTUAL_BASE = f"http://{_VIRTUAL_HOST}"
 _VIRTUAL_PATTERN = f"{_VIRTUAL_BASE}/**"
 _FILE_URL_IN_HTML_RE = re.compile(r"file://[^\s\"'<>)]+")
+_CSS_URL_RE = re.compile(
+    r"url\((?P<pre>\s*)(?P<quote>['\"]?)(?P<value>[^\"')]+)(?P=quote)(?P<post>\s*)\)",
+    re.IGNORECASE,
+)
+_WINDOWS_ABS_PATH_RE = re.compile(r"^[a-zA-Z]:[\\/]")
 
 
 # ---------------------------------------------------------------------------
@@ -86,8 +91,7 @@ def _abs_path_to_url_path(path: Path) -> str:
 def _parse_file_url(url: str) -> Path | None:
     """Convert a file:// URL to a local Path; return None for any other scheme.
 
-    Handles both POSIX paths (file:///app/...) and the Windows form that
-    data_source.py produces on Windows (file://C:/...).
+    Handles both POSIX paths (file:///app/...) and the Windows form (file://C:/...).
     """
     if not url.startswith("file://"):
         return None
@@ -159,7 +163,7 @@ def _file_url_to_virtual(url: str) -> str:
 
 
 def _preprocess_html_file_urls(html: str) -> str:
-    """Rewrite embedded file:// URLs in HTML into virtual-host URLs."""
+    """Rewrite local file URLs/paths in HTML/CSS into virtual-host URLs."""
     replaced = 0
 
     def _replace(match: re.Match[str]) -> str:
@@ -171,8 +175,28 @@ def _preprocess_html_file_urls(html: str) -> str:
         return converted
 
     processed = _FILE_URL_IN_HTML_RE.sub(_replace, html)
+
+    def _replace_css_url(match: re.Match[str]) -> str:
+        nonlocal replaced
+        original_value = match.group("value")
+        normalized = original_value.strip().replace("\\", "/")
+
+        converted = original_value
+        if os.name == "nt" and _WINDOWS_ABS_PATH_RE.match(normalized):
+            converted = _file_url_to_virtual(f"file://{normalized}")
+
+        if converted == original_value:
+            return match.group(0)
+
+        replaced += 1
+        return (
+            f"url({match.group('pre')}{match.group('quote')}"
+            f"{converted}{match.group('quote')}{match.group('post')})"
+        )
+
+    processed = _CSS_URL_RE.sub(_replace_css_url, processed)
     if replaced:
-        log("DEBUG", f"Replaced {replaced} embedded file:// URL(s) in HTML")
+        log("DEBUG", f"Replaced {replaced} local URL/path reference(s) in HTML")
     return processed
 
 
