@@ -272,9 +272,11 @@ def _patch_page(page: Page) -> None:
         | None = None,
         referer: str | None = None,
     ) -> Response | None:
-        if local_dir := _parse_file_url(url):
+        if local_path := _parse_file_url(url):
             nonlocal template_path
-            template_path = _file_url_to_virtual(local_dir.resolve().as_uri())
+            template_path = _file_url_to_virtual(local_path.resolve().as_uri())
+            if local_path.is_dir():
+                template_path += "/"
             log("DEBUG", f"Page navigation to file URL: <y>{escape_tag(url)}</>")
             url = _VIRTUAL_BASE
 
