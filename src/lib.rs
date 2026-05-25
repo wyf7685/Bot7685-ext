@@ -1,5 +1,4 @@
 mod lru;
-mod utils;
 mod wplace;
 
 use pyo3::prelude::*;

@@ -35,7 +35,7 @@ wheels = [
 
 [[package]]
 name = "bot7685-ext"
-source = { virtual = "." }
+source = { editable = "." }
 
 [package.optional-dependencies]
 htmlrender = [
@@ -54,7 +54,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bot7685-ext", extras = ["nonebot"], marker = "extra == 'htmlrender'", virtual = "." },
+    { name = "bot7685-ext", extras = ["nonebot"], marker = "extra == 'htmlrender'", editable = "." },
     { name = "httpx", extras = ["http2"], marker = "extra == 'htmlrender'", specifier = ">=0.27.0" },
     { name = "nonebot-plugin-htmlrender", marker = "extra == 'htmlrender'", specifier = ">=0.6.7" },
     { name = "nonebot2", marker = "extra == 'nonebot'", specifier = ">=2.4.4" },

@@ -1,7 +1,8 @@
-from asyncio import AbstractEventLoop
-from collections.abc import Mapping
+# ruff: noqa: PYI021
+
+from collections.abc import Callable, Mapping
 from types import GenericAlias
-from typing import Any, Callable, overload
+from typing import Any, overload
 
 from bot7685_ext.wplace.consts import ColorName
 
@@ -11,33 +12,29 @@ __git_commit_hash__: str
 
 WPLACE_COLORS_MAP: list[tuple[ColorName, tuple[int, int, int]]]
 
-async def wplace_template_compare(
+def wplace_template_compare(
     template_bytes: bytes,
     actual_bytes: bytes,
     include_pixels: bool,
-    asyncio_loop: AbstractEventLoop,
     /,
 ) -> list[tuple[ColorName, int, int, list[tuple[int, int]]]]: ...
-async def wplace_template_overlay(
+def wplace_template_overlay(
     template_bytes: bytes,
     actual_bytes: bytes,
     overlay_alpha: int,
-    asyncio_loop: AbstractEventLoop,
     /,
 ) -> bytes: ...
-async def wplace_group_adjacent(
+def wplace_group_adjacent(
     points: list[tuple[int, int, int]],
     min_group_size: int,
     merge_distance: float,
-    asyncio_loop: AbstractEventLoop,
     /,
 ) -> list[list[tuple[int, int, int]]]: ...
-async def wplace_compose_tiles(
+def wplace_compose_tiles(
     tiles: list[tuple[tuple[int, int], bytes]],
     coord1: tuple[int, int, int, int],
     coord2: tuple[int, int, int, int],
     background: tuple[int, int, int] | None,
-    asyncio_loop: AbstractEventLoop,
     /,
 ) -> bytes: ...
 
@@ -63,7 +60,6 @@ class LRU[KT, VT]:
         callback: Callable[[KT, VT], Any],
     ) -> None: ...
     def __class_getitem__(cls, item: Any, /) -> GenericAlias: ...
-    def __repr__(self) -> str: ...
     def __len__(self) -> int: ...
     def __contains__(self, key: KT, /) -> bool: ...
     def __getitem__(self, key: KT, /) -> VT: ...
@@ -85,13 +81,16 @@ class LRU[KT, VT]:
         default and return default."""
     @overload
     def pop(self, key: KT) -> VT:
-        """If L has key return its value and remove it from L, otherwise raise KeyError."""
+        """If L has key return its value and remove it from L, otherwise raise
+        KeyError."""
     @overload
     def pop[T](self, key: KT, default: VT | T) -> VT | T:
-        """If L has key return its value and remove it from L, otherwise return default."""
+        """If L has key return its value and remove it from L, otherwise return
+        default."""
     def popitem(self, least_recent: bool = True) -> tuple[KT, VT]:
         """Returns and removes a (key, value) pair. The pair returned is the
-        least-recently used if least_recent is true, or the most-recently used if false."""
+        least-recently used if least_recent is true, or the most-recently used
+        if false."""
     def keys(self) -> list[KT]:
         """List of L's keys in MRU order."""
     def values(self) -> list[VT]:

@@ -1,8 +1,6 @@
 use pyo3::{prelude::*, types::PyList};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::wplace::utils::*;
-
 type Point = (i32, i32, i32); // (x, y, color_id)
 type Points = Vec<Point>;
 type CenterXY = (f64, f64);
@@ -218,10 +216,7 @@ pub(crate) fn wplace_group_adjacent(
     points: Vec<Point>,
     min_group_size: usize,
     merge_distance: f64,
-    asyncio_loop: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
-    spawn_thread_for_async(asyncio_loop, move || {
-        let grouped = group_adjacent(points, min_group_size, merge_distance);
-        Python::attach(|py| Ok(PyList::new(py, grouped)?.unbind()))
-    })
+) -> PyResult<Py<PyList>> {
+    let grouped = group_adjacent(points, min_group_size, merge_distance);
+    Python::attach(|py| Ok(PyList::new(py, grouped)?.unbind()))
 }

@@ -9,6 +9,10 @@ async def compose_tiles(
     coord2: tuple[int, int, int, int],
     background: tuple[int, int, int] | None = None,
 ) -> bytes:
-    return await wplace_compose_tiles(
-        tiles, coord1, coord2, background, asyncio.get_event_loop()
+    return await asyncio.to_thread(
+        wplace_compose_tiles,
+        tiles,
+        coord1,
+        coord2,
+        background,
     )

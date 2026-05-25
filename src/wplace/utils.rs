@@ -3,8 +3,6 @@ use std::io::Cursor;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-pub(crate) use crate::utils::*;
-
 pub(crate) trait LoadableImage {
     fn as_bytes(&self) -> &[u8];
     fn to_image(&self) -> PyResult<image::DynamicImage> {
