@@ -449,14 +449,11 @@ def patch_htmlrender() -> None:
 
 
 def register_htmlrender_patch() -> None:
-    from nonebot.plugin import Plugin
+    from .plugin_load import on_plugin_load
 
-    from .plugin_load import after_plugin_load
-
-    @after_plugin_load
-    def apply_htmlrender_patch(plugin: Plugin, exception: Exception | None) -> None:
-        if exception is None and plugin.id_ == "nonebot_plugin_htmlrender":
-            patch_htmlrender()
+    @on_plugin_load("after", plugin_id="nonebot_plugin_htmlrender", skip_on_exc=True)
+    def apply_htmlrender_patch(_: object) -> None:
+        patch_htmlrender()
 
 
-__all__ = ["register_htmlrender_patch", "patch_htmlrender"]
+__all__ = ["patch_htmlrender", "register_htmlrender_patch"]
