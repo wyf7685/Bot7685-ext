@@ -1,8 +1,8 @@
-from typing import Literal, TypeAlias
+from typing import Literal
 
 from bot7685_ext._ext import WPLACE_COLORS_MAP
 
-ColorName: TypeAlias = Literal[
+type ColorName = Literal[
     "Black",
     "Dark Gray",
     "Gray",
