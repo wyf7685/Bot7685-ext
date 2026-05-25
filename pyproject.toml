@@ -10,7 +10,7 @@ dynamic = ["version"]
 nonebot = ["nonebot2>=2.4.4"]
 htmlrender = [
     "bot7685-ext[nonebot]",
-    "httpx",
+    "httpx[http2]>=0.27.0",
     "nonebot-plugin-htmlrender>=0.6.7",
 ]
 

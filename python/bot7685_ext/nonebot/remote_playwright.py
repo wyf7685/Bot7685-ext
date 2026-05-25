@@ -32,11 +32,12 @@ Patch points
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import functools
 import os
 import re
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from mimetypes import guess_type
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -200,6 +201,9 @@ def _preprocess_html_file_urls(html: str) -> str:
     return processed
 
 
+_PROXY_SEMAPHORE = asyncio.Semaphore(128)
+
+
 async def _proxy_handler(
     client: httpx.AsyncClient,
     route: Route,
@@ -220,19 +224,23 @@ async def _proxy_handler(
         return
 
     url = request.url
+    # Strip headers that don't make sense when relayed
+    req_headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in {"host", "origin", "referer"}
+    }
     log("DEBUG", f"Proxying request: <y>{escape_tag(url)}</>")
+
     try:
-        resp = await client.request(
-            method=request.method,
-            url=url,
-            # Strip headers that don't make sense when relayed
-            headers={
-                k: v
-                for k, v in request.headers.items()
-                if k.lower() not in {"host", "origin", "referer"}
-            },
-            content=request.post_data_buffer,
-        )
+        async with _PROXY_SEMAPHORE:
+            resp = await client.request(
+                method=request.method,
+                url=url,
+                headers=req_headers,
+                content=request.post_data_buffer,
+            )
+
         # Drop transfer/encoding headers; Playwright handles them itself
         resp_headers = {
             k: v
@@ -256,7 +264,7 @@ async def _proxy_handler(
 
 
 @contextlib.asynccontextmanager
-async def _make_proxy_handler() -> AsyncIterator[RouteHandler]:
+async def _make_proxy_handler() -> AsyncGenerator[RouteHandler]:
     """Yield a catch-all route handler that proxies external HTTP/HTTPS
     requests through the bot-side httpx client.
 
@@ -267,7 +275,7 @@ async def _make_proxy_handler() -> AsyncIterator[RouteHandler]:
     Virtual-host requests that slip past the specific route registrations are
     passed through via route.fallback() rather than proxied.
     """
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with httpx.AsyncClient(follow_redirects=True, http2=True) as client:
         yield functools.partial(_proxy_handler, client)
 
 
@@ -342,7 +350,7 @@ def _patch_page(page: Page) -> None:
 async def _patched_get_new_page(
     device_scale_factor: float = 2,
     **kwargs: object,
-) -> AsyncIterator[Page]:
+) -> AsyncGenerator[Page]:
     # Transform base_url when it is a file:// URL.
     # If called from _patched_html_to_pic, base_url was already virtualised
     # there; _file_url_to_virtual() will return it unchanged (not file://).
