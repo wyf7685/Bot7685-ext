@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Callable
 from importlib.machinery import SourceFileLoader
 from types import ModuleType
@@ -12,11 +13,9 @@ type BeforePluginLoadHook = Callable[[Plugin], object]
 type AfterPluginLoadHook = Callable[[Plugin, Exception | None], object]
 type AfterPluginLoadSkipExcHook = Callable[[Plugin], object]
 
-
-_before_plugin_load_hooks: list[tuple[BeforePluginLoadHook, str | None]] = []
+_before_plugin_load_hooks: list[tuple[BeforePluginLoadHook, set[str] | None]] = []
 _after_plugin_load_hooks: list[
-    tuple[AfterPluginLoadHook, str | None, Literal[False]]
-    | tuple[AfterPluginLoadSkipExcHook, str | None, Literal[True]]
+    tuple[AfterPluginLoadHook | AfterPluginLoadSkipExcHook, set[str] | None, bool]
 ] = []
 
 
@@ -25,21 +24,21 @@ def on_plugin_load[F: BeforePluginLoadHook](
     when: Literal["before"],
     /,
     *,
-    plugin_id: str | None = None,
+    plugin_id: str | set[str] | None = None,
 ) -> Callable[[F], F]: ...
 @overload
 def on_plugin_load[F: AfterPluginLoadHook](
     when: Literal["after"],
     /,
     *,
-    plugin_id: str | None = None,
+    plugin_id: str | set[str] | None = None,
 ) -> Callable[[F], F]: ...
 @overload
 def on_plugin_load[F: AfterPluginLoadSkipExcHook](
     when: Literal["after"],
     /,
     *,
-    plugin_id: str | None = None,
+    plugin_id: str | set[str] | None = None,
     skip_on_exc: Literal[True],
 ) -> Callable[[F], F]: ...
 
@@ -48,16 +47,36 @@ def on_plugin_load(
     when: str,
     /,
     *,
-    plugin_id: str | None = None,
+    plugin_id: str | set[str] | None = None,
     skip_on_exc: bool = False,
 ) -> Callable[..., Callable]:
+    if when not in {"before", "after"}:
+        raise ValueError(f"Invalid hook type: {when!r}")
+    if isinstance(plugin_id, str):
+        plugin_id = {plugin_id}
+
     def decorator(func: Callable) -> Callable:
+        n_params = len(inspect.signature(func).parameters)
         if when == "before":
+            if n_params != 1:
+                raise TypeError(
+                    f"Before plugin load hook {func} must accept exactly 1 parameter, "
+                    f"but got {n_params}"
+                )
             _before_plugin_load_hooks.append((func, plugin_id))
         elif when == "after":
-            _after_plugin_load_hooks.append((func, plugin_id, skip_on_exc))  # pyright: ignore[reportArgumentType]
-        else:
-            raise ValueError(f"Invalid hook type: {when!r}")
+            if skip_on_exc and n_params != 1:
+                raise TypeError(
+                    f"After plugin load hook {func} with skip_on_exc=True must accept exactly 1 parameter, "
+                    f"but got {n_params}"
+                )
+            if not skip_on_exc and n_params != 2:
+                raise TypeError(
+                    f"After plugin load hook {func} must accept exactly 2 parameters, "
+                    f"but got {n_params}"
+                )
+            _after_plugin_load_hooks.append((func, plugin_id, skip_on_exc))
+
         return func
 
     return decorator
@@ -74,9 +93,9 @@ def after_plugin_load[F: AfterPluginLoadHook](func: F) -> F:
 
 
 def _run_before_plugin_load_hooks(plugin: Plugin) -> None:
-    for hook, plugin_id in _before_plugin_load_hooks:
+    for hook, plugin_ids in _before_plugin_load_hooks:
         try:
-            if plugin_id is None or plugin_id == plugin.id_:
+            if plugin_ids is None or plugin.id_ in plugin_ids:
                 hook(plugin)
         except Exception:
             logger.exception(
@@ -85,9 +104,9 @@ def _run_before_plugin_load_hooks(plugin: Plugin) -> None:
 
 
 def _run_after_plugin_load_hooks(plugin: Plugin, exc: Exception | None) -> None:
-    for hook, plugin_id, skip_on_exc in _after_plugin_load_hooks:
+    for hook, plugin_ids, skip_on_exc in _after_plugin_load_hooks:
         try:
-            if plugin_id is None or plugin_id == plugin.id_:
+            if plugin_ids is None or plugin.id_ in plugin_ids:
                 if skip_on_exc:
                     if exc is None:
                         cast("AfterPluginLoadSkipExcHook", hook)(plugin)
