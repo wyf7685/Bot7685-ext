@@ -344,8 +344,7 @@ impl PyLRU {
     /// Support generic syntax: LRU[KT, VT]
     #[classmethod]
     fn __class_getitem__(cls: &Bound<'_, PyType>, item: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        let py = item.py();
-        let generic_alias = py.import("types")?.getattr("GenericAlias")?;
+        let generic_alias = item.py().import("types")?.getattr("GenericAlias")?;
         Ok(generic_alias.call1((cls, item))?.unbind())
     }
 

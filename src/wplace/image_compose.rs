@@ -1,9 +1,9 @@
 use image::{Rgba, RgbaImage};
 use pyo3::{prelude::*, types::PyBytes};
 
-use crate::wplace::utils::{LoadableImage, ImageBufferDump};
+use crate::wplace::utils::{ImageBufferDump, LoadableImage};
 
-#[pyfunction]
+#[pyfunction(name = "compose_tiles")]
 pub fn wplace_compose_tiles(
     imgs: Vec<((u32, u32), Vec<u8>)>,
     coord1: (u32, u32, u32, u32),

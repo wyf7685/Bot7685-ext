@@ -34,7 +34,7 @@ impl ColorEntry {
     }
 }
 
-#[pyfunction]
+#[pyfunction(name = "template_compare")]
 pub(crate) fn wplace_template_compare(
     template_bytes: Vec<u8>,
     actual_bytes: Vec<u8>,

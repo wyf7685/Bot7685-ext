@@ -1,6 +1,6 @@
 import asyncio
 
-from .._ext import wplace_compose_tiles
+from .._ext import wplace
 
 
 async def compose_tiles(
@@ -10,7 +10,7 @@ async def compose_tiles(
     background: tuple[int, int, int] | None = None,
 ) -> bytes:
     return await asyncio.to_thread(
-        wplace_compose_tiles,
+        wplace.compose_tiles,
         tiles,
         coord1,
         coord2,

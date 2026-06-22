@@ -2,41 +2,48 @@
 
 from collections.abc import Callable, Mapping
 from types import GenericAlias
-from typing import Any, overload
+from typing import Any, Final, overload
 
 from bot7685_ext.wplace.consts import ColorName
 
-__version__: str
-__build_time__: str
-__git_commit_hash__: str
+__version__: Final[str]
+__build_time__: Final[str]
+__git_commit_hash__: Final[str]
 
-WPLACE_COLORS_MAP: list[tuple[ColorName, tuple[int, int, int]]]
+class __WplaceModule:
+    COLORS_MAP: Final[list[tuple[ColorName, tuple[int, int, int]]]]
 
-def wplace_template_compare(
-    template_bytes: bytes,
-    actual_bytes: bytes,
-    include_pixels: bool,
-    /,
-) -> list[tuple[ColorName, int, int, list[tuple[int, int]]]]: ...
-def wplace_template_overlay(
-    template_bytes: bytes,
-    actual_bytes: bytes,
-    overlay_alpha: int,
-    /,
-) -> bytes: ...
-def wplace_group_adjacent(
-    points: list[tuple[int, int, int]],
-    min_group_size: int,
-    merge_distance: float,
-    /,
-) -> list[list[tuple[int, int, int]]]: ...
-def wplace_compose_tiles(
-    tiles: list[tuple[tuple[int, int], bytes]],
-    coord1: tuple[int, int, int, int],
-    coord2: tuple[int, int, int, int],
-    background: tuple[int, int, int] | None,
-    /,
-) -> bytes: ...
+    @staticmethod
+    def template_compare(
+        template_bytes: bytes,
+        actual_bytes: bytes,
+        include_pixels: bool = False,
+        /,
+    ) -> list[tuple[ColorName, int, int, list[tuple[int, int]]]]: ...
+    @staticmethod
+    def template_overlay(
+        template_bytes: bytes,
+        actual_bytes: bytes,
+        overlay_alpha: int,
+        /,
+    ) -> bytes: ...
+    @staticmethod
+    def group_adjacent(
+        points: list[tuple[int, int, int]],
+        min_group_size: int,
+        merge_distance: float,
+        /,
+    ) -> list[list[tuple[int, int, int]]]: ...
+    @staticmethod
+    def compose_tiles(
+        tiles: list[tuple[tuple[int, int], bytes]],
+        coord1: tuple[int, int, int, int],
+        coord2: tuple[int, int, int, int],
+        background: tuple[int, int, int] | None,
+        /,
+    ) -> bytes: ...
+
+wplace: Final[__WplaceModule]
 
 class LRU[KT, VT]:
     """LRU dict that can store up to ``size`` elements.

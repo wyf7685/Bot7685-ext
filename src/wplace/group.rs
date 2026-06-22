@@ -211,7 +211,7 @@ mod tests {
     }
 }
 
-#[pyfunction]
+#[pyfunction(name = "group_adjacent")]
 pub(crate) fn wplace_group_adjacent(
     points: Vec<Point>,
     min_group_size: usize,

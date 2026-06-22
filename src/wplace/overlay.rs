@@ -3,7 +3,7 @@ use pyo3::{prelude::*, types::PyBytes};
 
 use crate::wplace::utils::*;
 
-#[pyfunction]
+#[pyfunction(name = "template_overlay")]
 pub(crate) fn wplace_template_overlay(
     template_bytes: Vec<u8>,
     actual_bytes: Vec<u8>,

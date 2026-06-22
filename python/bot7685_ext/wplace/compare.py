@@ -1,11 +1,11 @@
 import asyncio
 from dataclasses import dataclass, field
 
-from .._ext import wplace_template_compare
+from .._ext import wplace
 from .consts import ALL_COLORS, COLORS_ID, PAID_COLORS, ColorName
 
 
-@dataclass
+@dataclass(slots=True)
 class ColorEntry:
     name: ColorName
     count: int = 0
@@ -47,7 +47,7 @@ async def compare(
     include_pixels: bool = False,
 ) -> list[ColorEntry]:
     entries = await asyncio.to_thread(
-        wplace_template_compare,
+        wplace.template_compare,
         template_bytes,
         actual_bytes,
         include_pixels,

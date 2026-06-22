@@ -1,6 +1,6 @@
 from typing import Literal
 
-from bot7685_ext._ext import WPLACE_COLORS_MAP
+from bot7685_ext._ext import wplace
 
 type ColorName = Literal[
     "Black",
@@ -69,9 +69,9 @@ type ColorName = Literal[
 ]
 
 COLORS_ID: dict[ColorName, int] = {
-    name: idx for idx, (name, _) in enumerate(WPLACE_COLORS_MAP, 1)
+    name: idx for idx, (name, _) in enumerate(wplace.COLORS_MAP, 1)
 }
 COLORS_NAME: dict[int, ColorName] = {idx: name for name, idx in COLORS_ID.items()}
-ALL_COLORS = dict(WPLACE_COLORS_MAP)
-FREE_COLORS: list[ColorName] = [name for name, _ in WPLACE_COLORS_MAP[:31]]
-PAID_COLORS: list[ColorName] = [name for name, _ in WPLACE_COLORS_MAP[31:]]
+ALL_COLORS = dict(wplace.COLORS_MAP)
+FREE_COLORS: list[ColorName] = [name for name, _ in wplace.COLORS_MAP[:31]]
+PAID_COLORS: list[ColorName] = [name for name, _ in wplace.COLORS_MAP[31:]]

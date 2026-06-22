@@ -1,6 +1,6 @@
 import asyncio
 
-from .._ext import wplace_group_adjacent
+from .._ext import wplace
 
 
 async def group_adjacent(
@@ -9,7 +9,7 @@ async def group_adjacent(
     merge_distance: int | float = 30.0,
 ) -> list[list[tuple[int, int, int]]]:
     return await asyncio.to_thread(
-        wplace_group_adjacent,
+        wplace.group_adjacent,
         points,
         int(min_group_size),
         float(merge_distance),
