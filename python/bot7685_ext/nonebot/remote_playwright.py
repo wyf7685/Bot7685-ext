@@ -21,7 +21,11 @@ path component provides unambiguous file identity without any hashing.
 
 A catch-all proxy route (registered first, lowest priority) intercepts all
 external HTTP/HTTPS requests, proxies them via httpx on the bot side, and
-adds Access-Control-Allow-Origin: * to avoid CORS errors.
+adds Access-Control-Allow-Origin: * to avoid CORS errors.  Templates that
+reference hundreds of remote images (e.g. skland's operator roster) burst
+far past a single connection's capacity, so the proxy bounds concurrency,
+retries idempotent requests whose pooled connection was closed by the peer,
+and aborts — never falls back — when a request is unrecoverable.
 
 Patch points
 ------------
@@ -35,13 +39,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
-import os
+import posixpath
 import re
 from collections.abc import AsyncGenerator, Callable
 from mimetypes import guess_type
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import anyio
 import httpx
@@ -70,6 +74,21 @@ _CSS_URL_RE = re.compile(
     re.IGNORECASE,
 )
 _WINDOWS_ABS_PATH_RE = re.compile(r"^[a-zA-Z]:[\\/]")
+_URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+# Headers that must not be relayed as-is when proxying through httpx.
+# `accept-encoding` is dropped so httpx negotiates only codecs it can decode
+# (the browser advertises br/zstd, which would otherwise come back encoded and
+# be handed to the page as identity bytes once `content-encoding` is stripped).
+_STRIPPED_REQUEST_HEADERS = frozenset(
+    {"host", "origin", "referer", "accept-encoding", "connection", "content-length"}
+)
+# httpx decodes the body, so the original framing/encoding headers are wrong.
+_STRIPPED_RESPONSE_HEADERS = frozenset(
+    {"content-encoding", "content-length", "transfer-encoding", "connection"}
+)
+_PROXY_RETRY_ATTEMPTS = 3
+_PROXY_RETRY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 # ---------------------------------------------------------------------------
@@ -77,33 +96,51 @@ _WINDOWS_ABS_PATH_RE = re.compile(r"^[a-zA-Z]:[\\/]")
 # ---------------------------------------------------------------------------
 
 
-def _abs_path_to_url_path(path: Path) -> str:
-    """Convert a resolved absolute Path to a URL path component string.
+def _normalize_abs_path(raw: str) -> str:
+    """Lexically normalise an absolute path into POSIX form.
+
+    POSIX: /opt/venv/../lib/x  → /opt/lib/x
+    Windows: C:\\Users\\..\\x  → C:/x
+
+    Deliberately lexical: `Path.resolve()` both touches the filesystem and,
+    on Windows, anchors drive-less POSIX paths to the current drive — which
+    would corrupt every path coming from a Linux-side render.
+    """
+    normalized = posixpath.normpath(raw.replace("\\", "/"))
+    # normpath collapses the leading "//" that POSIX reserves as implementation
+    # defined; a bot-side absolute path never means a UNC share here.
+    return "/" + normalized.lstrip("/") if raw.startswith(("/", "\\")) else normalized
+
+
+def _abs_path_to_url_path(path: str) -> str:
+    """Convert a normalised absolute path to a URL path component.
 
     POSIX: /opt/venv/lib/...  → /opt/venv/lib/...
-    Windows: C:\\Users\\...  → /C:/Users/...
+    Windows: C:/Users/...  → /C:/Users/...
     """
-    path_str = str(path)
-    if len(path_str) >= 2 and path_str[1] == ":":  # Windows drive letter
-        return "/" + path_str.replace("\\", "/")
-    return path_str  # POSIX: already starts with "/"
+    if len(path) >= 2 and path[1] == ":":  # Windows drive letter
+        path = "/" + path
+    return quote(path, safe="/:")
 
 
-def _parse_file_url(url: str) -> Path | None:
-    """Convert a file:// URL to a local Path; return None for any other scheme.
+def _virtual_url_for_path(path: str) -> str:
+    """Build the virtual-host URL serving a bot-side absolute path."""
+    return f"{_VIRTUAL_BASE}{_abs_path_to_url_path(_normalize_abs_path(path))}"
+
+
+def _parse_file_url(url: str) -> str | None:
+    """Convert a file:// URL to a local path; return None for any other scheme.
 
     Handles both POSIX paths (file:///app/...) and the Windows form (file://C:/...).
     """
     if not url.startswith("file://"):
         return None
-    # parsed = urlparse(url)
-    # path_str = unquote(parsed.path).replace(os.sep, "/")
-    path_str = unquote(url[7:]).replace(os.sep, "/")
-    # Windows: urlparse("file:///C:/foo").path == "/C:/foo"
-    # Strip the leading "/" when the second char is a drive-letter colon.
+    path_str = unquote(url[7:]).replace("\\", "/")
+    # Windows: "file:///C:/foo" → "/C:/foo"; strip the leading "/" when the
+    # second char is a drive-letter colon.
     if len(path_str) >= 3 and path_str[0] == "/" and path_str[2] == ":":
         path_str = path_str[1:]
-    return Path(path_str)
+    return _normalize_abs_path(path_str)
 
 
 async def _file_handler(route: Route, request: Request) -> None:
@@ -125,7 +162,7 @@ async def _file_handler(route: Route, request: Request) -> None:
     if not url_path or url_path == "/":
         # page.goto() root navigation — return an empty placeholder so
         # Playwright considers the navigation successful.
-        await route.fulfill(content_type="text/html", body=b"")
+        await _fulfill(route, content_type="text/html", body=b"")
         return
 
     # Convert URL path component back to an absolute filesystem path.
@@ -140,27 +177,48 @@ async def _file_handler(route: Route, request: Request) -> None:
 
     if not await target.is_file():
         log("DEBUG", f"404: <y>{escape_tag(str(target))}</>")
-        await route.fulfill(status=404)
+        await _fulfill(route, status=404)
         return
 
     mime, _ = guess_type(target.name)
-    await route.fulfill(
+    await _fulfill(
+        route,
         body=await target.read_bytes(),
         content_type=mime or "application/octet-stream",
     )
 
 
 def _file_url_to_virtual(url: str) -> str:
-    """Convert a file:// URL to a virtual HTTP URL
+    """Convert a file:// URL to a virtual HTTP URL.
 
     Returns the URL unchanged if it is not a file:// URL.
     """
     local_path = _parse_file_url(url)
-    if local_path is None:
-        return url
+    return url if local_path is None else _virtual_url_for_path(local_path)
 
-    resolved = local_path.resolve()
-    return f"{_VIRTUAL_BASE}{_abs_path_to_url_path(resolved)}"
+
+def _local_ref_to_virtual(value: str) -> str | None:
+    """Virtualise a bare local filesystem path referenced from HTML/CSS.
+
+    Returns None when the value needs no rewriting: fragment references
+    (``url(#gradient)``), protocol-relative and absolute URLs, ``data:`` URIs,
+    and relative paths — the latter are resolved by the browser against the
+    injected ``<base href>`` and hit the virtual-host route anyway.
+    """
+    ref = value.strip()
+    if not ref or ref.startswith(("#", "//")):
+        return None
+
+    normalized = ref.replace("\\", "/")
+    # Windows drive paths must be tested before the generic scheme check,
+    # since "C:/x" also looks like a scheme.
+    if _WINDOWS_ABS_PATH_RE.match(normalized):
+        return _virtual_url_for_path(normalized)
+    if _URL_SCHEME_RE.match(ref):
+        return None
+    if normalized.startswith("/"):
+        return _virtual_url_for_path(normalized)
+    return None
 
 
 def _preprocess_html_file_urls(html: str) -> str:
@@ -180,13 +238,8 @@ def _preprocess_html_file_urls(html: str) -> str:
     def _replace_css_url(match: re.Match[str]) -> str:
         nonlocal replaced
         original_value = match.group("value")
-        normalized = original_value.strip().replace("\\", "/")
-
-        converted = original_value
-        if os.name == "nt" and _WINDOWS_ABS_PATH_RE.match(normalized):
-            converted = _file_url_to_virtual(f"file://{normalized}")
-
-        if converted == original_value:
+        converted = _local_ref_to_virtual(original_value)
+        if converted is None or converted == original_value:
             return match.group(0)
 
         replaced += 1
@@ -201,7 +254,59 @@ def _preprocess_html_file_urls(html: str) -> str:
     return processed
 
 
-_PROXY_SEMAPHORE = asyncio.Semaphore(128)
+_PROXY_SEMAPHORE = asyncio.Semaphore(64)
+_PROXY_LIMITS = httpx.Limits(
+    max_connections=32,
+    max_keepalive_connections=16,
+    keepalive_expiry=5.0,
+)
+_PROXY_TIMEOUT = httpx.Timeout(20.0, connect=10.0)
+# A pooled HTTP/2 connection torn down by the peer (GOAWAY) surfaces as
+# LocalProtocolError on the next request that picks it up; the pool discards
+# it, so a retry lands on a fresh connection.
+_RETRYABLE_PROXY_EXC = (
+    httpx.LocalProtocolError,
+    httpx.RemoteProtocolError,
+    httpx.ConnectError,
+    httpx.ReadError,
+    httpx.WriteError,
+    httpx.PoolTimeout,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+)
+
+
+async def _proxy_fetch(
+    client: httpx.AsyncClient,
+    request: Request,
+) -> httpx.Response:
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in _STRIPPED_REQUEST_HEADERS
+    }
+    retryable = request.method.upper() in _PROXY_RETRY_METHODS
+    attempt = 0
+
+    while True:
+        attempt += 1
+        try:
+            async with _PROXY_SEMAPHORE:
+                return await client.request(
+                    method=request.method,
+                    url=request.url,
+                    headers=headers,
+                    content=request.post_data_buffer,
+                )
+        except _RETRYABLE_PROXY_EXC as exc:
+            if not retryable or attempt >= _PROXY_RETRY_ATTEMPTS:
+                raise
+            log(
+                "DEBUG",
+                f"Proxy attempt {attempt} failed for "
+                f"<y>{escape_tag(request.url)}</>: {exc!r}, retrying",
+            )
+            await asyncio.sleep(0.1 * attempt)
 
 
 async def _proxy_handler(
@@ -220,47 +325,51 @@ async def _proxy_handler(
             "Request for virtual host reached proxy handler (route miss?): "
             f"<y>{escape_tag(request.url)}</>",
         )
-        await route.fulfill(status=404)
+        await _fulfill(route, status=404)
         return
 
     url = request.url
-    # Strip headers that don't make sense when relayed
-    req_headers = {
-        k: v
-        for k, v in request.headers.items()
-        if k.lower() not in {"host", "origin", "referer"}
-    }
     log("DEBUG", f"Proxying request: <y>{escape_tag(url)}</>")
 
     try:
-        async with _PROXY_SEMAPHORE:
-            resp = await client.request(
-                method=request.method,
-                url=url,
-                headers=req_headers,
-                content=request.post_data_buffer,
-            )
+        resp = await _proxy_fetch(client, request)
+    except Exception as exc:
+        # Never fall back to the browser's own network stack: the remote
+        # Playwright container has no route to these hosts, so fallback()
+        # would stall the render until the navigation timeout.
+        log("WARNING", f"Proxy failed for <y>{escape_tag(url)}</>", exc)
+        with contextlib.suppress(Exception):
+            await route.abort("failed")
+        return
 
-        # Drop transfer/encoding headers; Playwright handles them itself
-        resp_headers = {
-            k: v
-            for k, v in resp.headers.multi_items()
-            if k.lower() not in {"content-encoding", "transfer-encoding"}
-        }
-        resp_headers["access-control-allow-origin"] = "*"
-        resp_headers["access-control-allow-credentials"] = "true"
+    headers = {
+        k: v
+        for k, v in resp.headers.multi_items()
+        if k.lower() not in _STRIPPED_RESPONSE_HEADERS
+    }
+    headers["access-control-allow-origin"] = "*"
+    headers["access-control-allow-credentials"] = "true"
+    await _fulfill(route, status=resp.status_code, headers=headers, body=resp.content)
+
+
+async def _fulfill(
+    route: Route,
+    *,
+    status: int | None = None,
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+    content_type: str | None = None,
+) -> None:
+    """Fulfill a route, tolerating a page torn down mid-flight."""
+    try:
         await route.fulfill(
-            status=resp.status_code,
-            headers=resp_headers,
-            body=resp.content,
+            status=status,
+            headers=headers,
+            body=body,
+            content_type=content_type,
         )
     except Exception as exc:
-        log(
-            "WARNING",
-            f"Proxy failed for <y>{escape_tag(url)}</>",
-            exc,
-        )
-        await route.fallback()
+        log("DEBUG", f"Failed to fulfill route: {exc!r}")
 
 
 @contextlib.asynccontextmanager
@@ -273,9 +382,14 @@ async def _make_proxy_handler() -> AsyncGenerator[RouteHandler]:
     added so the browser accepts cross-origin subresources.
 
     Virtual-host requests that slip past the specific route registrations are
-    passed through via route.fallback() rather than proxied.
+    answered with 404 rather than proxied.
     """
-    async with httpx.AsyncClient(follow_redirects=True, http2=True) as client:
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        http2=True,
+        limits=_PROXY_LIMITS,
+        timeout=_PROXY_TIMEOUT,
+    ) as client:
         yield functools.partial(_proxy_handler, client)
 
 
@@ -304,10 +418,12 @@ def _patch_page(page: Page) -> None:
         | None = None,
         referer: str | None = None,
     ) -> Response | None:
-        if local_path := _parse_file_url(url):
+        if (local_path := _parse_file_url(url)) is not None:
             nonlocal template_path
-            template_path = _file_url_to_virtual(local_path.resolve().as_uri())
-            if local_path.is_dir():
+            template_path = _virtual_url_for_path(local_path)
+            # A directory base must keep its trailing slash, otherwise the
+            # browser resolves relative refs against its parent.
+            if url.endswith("/") or await anyio.Path(local_path).is_dir():
                 template_path += "/"
             log("DEBUG", f"Page navigation to file URL: <y>{escape_tag(url)}</>")
             url = _VIRTUAL_BASE
